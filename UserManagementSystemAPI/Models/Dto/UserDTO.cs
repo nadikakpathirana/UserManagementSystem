@@ -4,19 +4,13 @@ namespace UserManagementSystemAPI.Model.Dto
 {
     public class UserDTO
     {
-        public int Id { get; set; }
-        [Required]
-        [MaxLength(30)]
-        public string Name { get; set; }
+        public string FName { get; set; } = string.Empty;
 
-        [Key]
-        public string? Email { get; set; }
+        public string LName { get; set; } = string.Empty;
 
-        public string? ProPic { get; set; }
+        public string Email { get; set; } = string.Empty;
 
-
-
-        
+        public string Role { get; set; } = string.Empty;
 
     }
 }

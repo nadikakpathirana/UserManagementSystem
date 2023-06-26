@@ -1,14 +1,14 @@
-﻿using UserManagementSystemAPI.Model.Dto;
+﻿using Microsoft.EntityFrameworkCore;
+using UserManagementSystemAPI.Models;
 
 namespace UserManagementSystemAPI.Data
 {
-    public class ApplicationDbContext
+    public class ApplicationDbContext: DbContext
     {
-        public static List<UserDTO> userList = new List<UserDTO>
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
         {
-            new UserDTO { Id = 1, Name = "nadika", Email = "nadikakpathirana@gmail.com", ProPic="/test/test"},
-            new UserDTO { Id = 2, Name = "koshala", Email = "nadikakpathirana2@gmail.com", ProPic="/test/test"}
-        };
 
+        }
+        public DbSet<User> Users { get; set; }
     }
 }

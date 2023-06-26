@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using UserManagementSystemAPI.Data;
 using UserManagementSystemAPI.Models;
 using UserManagementSystemAPI.Models.Dto;
 using UserManagementSystemAPI.Services;
@@ -14,68 +15,111 @@ namespace UserManagementSystemAPI.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        public static User user = new User();
         private readonly IConfiguration _configuration;
         private readonly IUserService _userService;
+        readonly ApplicationDbContext _db;
 
-        public AuthController(IConfiguration configuration, IUserService userService)
+        public AuthController(IConfiguration configuration, IUserService userService, ApplicationDbContext db)
         {
             _configuration = configuration;
             _userService = userService;
+            _db = db;
+        }
+
+        public static string Decrypt(string encryptedText, int key)
+        {
+            string decrypted = "";
+            foreach (char c in encryptedText)
+            {
+                int charCode = (int)c;
+                int decryptedCharCode = charCode - key; // Subtract key from charCode
+                decrypted += (char)decryptedCharCode;
+            }
+            return decrypted;
         }
 
         [HttpGet, Authorize]
         public ActionResult<string> GetUserClaims()
         {
             return Ok(_userService.GetUserClaims());
-
-            //var userName = User?.Identity?.Name;
-            //var roleClaims = User?.FindAll(ClaimTypes.Role);
-            //var roles = roleClaims?.Select(c => c.Value).ToList();
-            //var roles2 = User?.Claims
-            //    .Where(c => c.Type == ClaimTypes.Role)
-            //    .Select(c => c.Value)
-            //    .ToList();
-            //return Ok(new { userName, roles, roles2 });
         }
 
         [HttpPost("register")]
-        public ActionResult<User> Register(UserRegisterDTO request)
+        [ProducesResponseType(StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public ActionResult<User> Register(UserRegisterDTO userRegisterDTO)
         {
-            string passwordHash
-                = BCrypt.Net.BCrypt.HashPassword(request.Password);
+            if (userRegisterDTO == null)
+            {
+                ModelState.AddModelError("CustomError", "Invalid Input");
+                return BadRequest();
+            }
 
-            user.Username = request.Username;
-            user.PasswordHash = passwordHash;
+            if (_db.Users.FirstOrDefault(u => u.Username.ToLower() == userRegisterDTO.Username.ToLower()) != null)
+            {
+                ModelState.AddModelError("CustomError", "Username already Exists");
+                return BadRequest(ModelState);
+            }
+
+            if (_db.Users.FirstOrDefault(u => u.Email.ToLower() == userRegisterDTO.Email.ToLower()) != null)
+            {
+                ModelState.AddModelError("CustomError", "Email already Exists");
+                return BadRequest(ModelState);
+            }
+
+            string passwordHash
+                = BCrypt.Net.BCrypt.HashPassword(userRegisterDTO.Password);
+
+            User newUser = new()
+            {
+                Username = userRegisterDTO.Username,
+                FName = userRegisterDTO.FName,
+                LName = userRegisterDTO.LName,
+                Email = userRegisterDTO.Email,
+                Role = userRegisterDTO.Role,
+                PasswordHash = passwordHash,
+                CreatedDate = DateTime.Now
+            };
+
+            _db.Users.Add(newUser);
+            _db.SaveChanges();
+
+            return Ok(newUser);
+        }
+
+        [HttpPost("login")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public ActionResult<User> Login(UserLoginDTO userLoginDTO)
+        {
+            var user = _db.Users.FirstOrDefault(u => u.Username == userLoginDTO.Username);
+
+            if (user == null)
+            {
+                ModelState.AddModelError("CustomeError", "Invalid Username");
+                return BadRequest(ModelState);
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(userLoginDTO.Password, user.PasswordHash))
+            {
+                ModelState.AddModelError("CustomeError", "Invalid Password");
+                return BadRequest(ModelState);
+            }
+
+            string token = CreateToken(user);
+            user.Token = token;
 
             return Ok(user);
         }
 
-        [HttpPost("login")]
-        public ActionResult<User> Login(UserLoginDTO request)
-        {
-            // get user from db context
-            if (user.Username != request.Username)
-            {
-                return BadRequest("User not found.");
-            }
-
-            if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
-            {
-                return BadRequest("Wrong password.");
-            }
-
-            string token = CreateToken(user);
-
-            return Ok(token);
-        }
-
         private string CreateToken(User user)
         {
-            List<Claim> claims = new List<Claim> {
+            List<Claim> claims = new()
+            {
                 new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, "TestRole"),
-                new Claim(ClaimTypes.Role, "User"),
+                new Claim(ClaimTypes.NameIdentifier, user.FName +" "+ user.LName),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim(ClaimTypes.Sid, user.Id.ToString()),
             };
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(
